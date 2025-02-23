@@ -1,21 +1,20 @@
 import os
 import socket
+import json
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 UDP_IP = "0.0.0.0"
 UDP_PORT = 10000
 BROADCAST_IP = "192.168.0.255"
-MAC_TABLE = {
-    "rigel": "04:D9:F5:F3:D0:67",
-    "dell": "00:D4:9E:9B:1E:A5",
-    "paul": "60:45:CB:9D:AC:6B",
-    "paullt": "A0:80:69:F7:1E:1C"
-}
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("Error: TELEGRAM_BOT_TOKEN environment variable not set")
 app = Application.builder().token(TOKEN).build()
-
+mac_table_json = os.getenv("MAC_TABLE")
+if mac_table_json:
+    MAC_TABLE = json.loads(mac_table_json)
+else:
+    MAC_TABLE = {}
 
 def send_wol(hostname):
     mac_address=MAC_TABLE[hostname]
