@@ -6,5 +6,7 @@ services:
     build: .
     network_mode: "host"
     restart: unless-stopped
-    environment:
-      - TELEGRAM_BOT_TOKEN=
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
