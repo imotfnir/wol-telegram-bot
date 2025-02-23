@@ -1,7 +1,9 @@
 import os
 import socket
 import json
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import asyncio
+from telegram import BotCommand
+from telegram.ext import Application, CommandHandler
 
 UDP_IP = "0.0.0.0"
 UDP_PORT = 10000
@@ -24,6 +26,15 @@ def send_wol(hostname):
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         s.sendto(magic_packet, (BROADCAST_IP, 9))
+
+async def set_bot_commands():
+    commands = [
+        BotCommand("start", "開始使用機器人"),
+        BotCommand("help", "顯示幫助"),
+        BotCommand("wol", "喚醒裝置"),
+        BotCommand("status", "查看當前狀態"),
+    ]
+    await app.bot.set_my_commands(commands)
 
 
 async def start(update, context):
@@ -49,5 +60,7 @@ async def wol(update, context):
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("wol", wol))
 
+
 if __name__ == "__main__":
     app.run_polling()
+    asyncio.run(set_bot_commands())

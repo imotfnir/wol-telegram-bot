@@ -3,7 +3,6 @@ WORKDIR /app
 COPY wol.py /app/wol.py
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
-CMD ["pip" , "list python-telegram-bot"]
 CMD ["python", "/app/wol.py"]
 # CMD ["tail", "-f", "/dev/null"]
 
