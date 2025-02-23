@@ -2,11 +2,12 @@ version: '3.8'
 
 services:
   wol-service:
-    image: wol-service
+    image: wol-telegram-bot-service
     build: .
+    container_name: wol
     network_mode: "host"
     restart: unless-stopped
     env_file:
       - .env
-    volumes:
-      - ./:/app
+    # volumes:
+    #   - ./:/app
