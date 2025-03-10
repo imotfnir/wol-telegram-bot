@@ -1,5 +1,4 @@
-version: '3.8'
-
+---
 services:
   wol-service:
     image: wol-telegram-bot-service
@@ -11,3 +10,4 @@ services:
       - .env
     # volumes:
     #   - ./:/app
+
