@@ -1,7 +1,9 @@
+import asyncio
+import json
 import os
 import socket
-import json
-import asyncio
+
+from scapy.all import ARP, Ether, srp
 from telegram import BotCommand
 from telegram.ext import Application, CommandHandler
 
@@ -49,6 +51,7 @@ async def set_bot_commands(application: Application):
         BotCommand("help", "顯示幫助"),
         BotCommand("wol", "喚醒裝置"),
         BotCommand("status", "查看當前狀態"),
+        BotCommand("arp", "查看當前狀態"),
     ]
     await application.bot.set_my_commands(commands)
 
@@ -58,6 +61,41 @@ async def start(update, context):
     await update.message.reply_text(
         "Please enter the name of the device to be woken up, for example: /wol mypc\nCurrently supported are rigel, dell, paul"
     )
+
+
+async def help_command(update, context):
+    """Handles the /help command and sends a help message."""
+    await update.message.reply_text(
+        "This bot allows you to wake up devices on your network using Wake-on-LAN.\n"
+        "Use `/wol <hostname>` to wake up a device. Supported hostnames are:\n"
+        + ", ".join(MAC_TABLE.keys())
+    )
+
+
+async def arp(update, context):
+    """Performs an ARP scan of the local network and returns the results."""
+    await update.message.reply_text("Starting ARP scan... This may take a moment.")
+
+    target_ip = "192.168.0.1/24"  # TODO: Make this configurable
+    arp = ARP(pdst=target_ip)
+    ether = Ether(dst="ff:ff:ff:ff:ff:ff")
+    packet = ether / arp
+
+    result = srp(packet, timeout=2, verbose=0)[0]
+
+    clients = []
+    for sent, received in result:
+        clients.append({"ip": received.psrc, "mac": received.hwsrc})
+
+    if not clients:
+        await update.message.reply_text("No active devices found on the network.")
+        return
+
+    response = "Active devices on the network:\n"
+    for client in clients:
+        response += f"- IP: {client['ip']}\tMAC: {client['mac']}\n"
+
+    await update.message.reply_text(response)
 
 
 async def wol(update, context):
@@ -86,8 +124,10 @@ async def wol(update, context):
 
 
 app = Application.builder().token(TOKEN).post_init(set_bot_commands).build()
+app.add_handler(CommandHandler("help", help_command))
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("wol", wol))
+app.add_handler(CommandHandler("arp", arp))
 
 
 if __name__ == "__main__":
