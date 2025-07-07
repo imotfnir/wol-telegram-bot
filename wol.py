@@ -2,7 +2,8 @@ import asyncio
 import json
 import os
 import socket
-
+import sqlite3
+from datetime import datetime
 from scapy.all import ARP, Ether, srp
 from telegram import BotCommand
 from telegram.ext import Application, CommandHandler
@@ -10,9 +11,10 @@ from telegram.ext import Application, CommandHandler
 UDP_IP = "0.0.0.0"
 UDP_PORT = 10000
 BROADCAST_IP = "192.168.0.255"
-TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TOKEN := os.environ.get("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
     raise ValueError("Error: TELEGRAM_BOT_TOKEN environment variable not set")
+DB_FILE = "arp_cache.db"
 
 mac_table_json = os.getenv("MAC_TABLE")
 if mac_table_json:
@@ -71,15 +73,29 @@ async def help_command(update, context):
         + ", ".join(MAC_TABLE.keys())
     )
 
+def init_db():
+    """Initializes the SQLite database and creates the arp_table if it doesn't exist."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS arp_table (
+            mac_address TEXT PRIMARY KEY,
+            ip_address TEXT NOT NULL,
+            last_seen DATETIME NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
 
 async def arp(update, context):
-    """Performs an ARP scan of the local network and returns the results."""
+    """Performs an ARP scan, updates the database, and returns the results."""
     await update.message.reply_text("Starting ARP scan... This may take a moment.")
 
     target_ip = "192.168.0.1/24"  # TODO: Make this configurable
-    arp = ARP(pdst=target_ip)
-    ether = Ether(dst="ff:ff:ff:ff:ff:ff")
-    packet = ether / arp
+    arp_request = ARP(pdst=target_ip)
+    ether_frame = Ether(dst="ff:ff:ff:ff:ff:ff")
+    packet = ether_frame / arp_request
 
     result = srp(packet, timeout=2, verbose=0)[0]
 
@@ -91,7 +107,21 @@ async def arp(update, context):
         await update.message.reply_text("No active devices found on the network.")
         return
 
-    response = "Active devices on the network:\n"
+    # Update the database
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    for client in clients:
+        cursor.execute("""
+            INSERT INTO arp_table (mac_address, ip_address, last_seen)
+            VALUES (?, ?, ?)
+            ON CONFLICT(mac_address) DO UPDATE SET
+                ip_address = excluded.ip_address,
+                last_seen = excluded.last_seen
+        """, (client['mac'], client['ip'], datetime.now()))
+    conn.commit()
+    conn.close()
+
+    response = "Active devices on the network (and updated in DB):\n"
     for client in clients:
         response += f"- IP: {client['ip']}\tMAC: {client['mac']}\n"
 
@@ -131,4 +161,5 @@ app.add_handler(CommandHandler("arp", arp))
 
 
 if __name__ == "__main__":
+    init_db()
     app.run_polling()
