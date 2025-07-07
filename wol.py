@@ -51,7 +51,7 @@ async def set_bot_commands(application: Application):
         BotCommand("help", "顯示幫助"),
         BotCommand("wol", "喚醒裝置"),
         BotCommand("status", "查看當前狀態"),
-        BotCommand("arp", "查看當前狀態"),
+        BotCommand("arp", "列出連線裝置並更新ARP表"),
     ]
     await application.bot.set_my_commands(commands)
 
