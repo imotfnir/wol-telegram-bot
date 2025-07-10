@@ -1,36 +1,33 @@
-import asyncio
 import json
 import os
 import socket
-
+from typing import Dict, List
 from scapy.all import ARP, Ether, srp
-from telegram import BotCommand
-from telegram.ext import Application, CommandHandler
+from telegram import BotCommand, Update
+from telegram.ext import Application, CommandHandler, ContextTypes
 
-UDP_IP = "0.0.0.0"
-UDP_PORT = 10000
-BROADCAST_IP = "192.168.0.255"
-TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
-if not TOKEN:
+UDP_IP: str = "0.0.0.0"
+UDP_PORT: int = 10000
+BROADCAST_IP: str = "192.168.0.255"
+if (TOKEN := os.getenv("TELEGRAM_BOT_TOKEN")) is None:
     raise ValueError("Error: TELEGRAM_BOT_TOKEN environment variable not set")
 
-mac_table_json = os.getenv("MAC_TABLE")
-if mac_table_json:
-    MAC_TABLE = json.loads(mac_table_json)
+if (mac_table_json := os.getenv("MAC_TABLE")) is not None:
+    MAC_TABLE: Dict[str, str] = json.loads(mac_table_json.lower())
 else:
-    MAC_TABLE = {}
+    MAC_TABLE: Dict[str, str] = []
 
 
-def send_wol(hostname):
+def send_wol(hostname: str) -> None:
     """Constructs and sends a Wake-on-LAN (WoL) magic packet.
 
     Args:
         hostname (str): The identifier for the device to wake up. This key
             is used to look up the corresponding MAC address in the MAC_TABLE.
     """
-    mac_address = MAC_TABLE[hostname]
-    mac_bytes = bytes.fromhex(mac_address.replace(":", "").replace("-", ""))
-    magic_packet = b"\xff" * 6 + mac_bytes * 16
+    mac_address: str = MAC_TABLE[hostname]
+    mac_bytes: bytes = bytes.fromhex(mac_address.replace(":", "").replace("-", ""))
+    magic_packet: bytes = b"\xff" * 6 + mac_bytes * 16
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -38,7 +35,7 @@ def send_wol(hostname):
 
 
 # slash commands
-async def set_bot_commands(application: Application):
+async def set_bot_commands(application: Application) -> None:
     """Sets the bot's command list for the Telegram UI.
 
     This function is called via `post_init` in the Application builder.
@@ -46,24 +43,24 @@ async def set_bot_commands(application: Application):
     Args:
         application (Application): The running `telegram.ext.Application` instance.
     """
-    commands = [
+    commands: List[BotCommand] = [
         BotCommand("start", "開始使用機器人"),
         BotCommand("help", "顯示幫助"),
         BotCommand("wol", "喚醒裝置"),
-        BotCommand("status", "查看當前狀態"),
         BotCommand("arp", "列出連線裝置並更新ARP表"),
     ]
     await application.bot.set_my_commands(commands)
 
 
-async def start(update, context):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the /start command and sends a welcome message."""
     await update.message.reply_text(
-        "Please enter the name of the device to be woken up, for example: /wol mypc\nCurrently supported are rigel, dell, paul"
+        "Please enter the name of the device to be woken up\n"
+        "for example: /wol mypc\n"
     )
 
 
-async def help_command(update, context):
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the /help command and sends a help message."""
     await update.message.reply_text(
         "This bot allows you to wake up devices on your network using Wake-on-LAN.\n"
@@ -72,33 +69,40 @@ async def help_command(update, context):
     )
 
 
-async def arp(update, context):
+async def arp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Performs an ARP scan of the local network and returns the results."""
     await update.message.reply_text("Starting ARP scan... This may take a moment.")
 
-    target_ip = "192.168.0.1/24"  # TODO: Make this configurable
-    arp = ARP(pdst=target_ip)
-    ether = Ether(dst="ff:ff:ff:ff:ff:ff")
-    packet = ether / arp
+    target_ip: str = "192.168.0.1/24"  # TODO: Make this configurable
+    arp_packet: ARP = ARP(pdst=target_ip)
+    ether_packet: Ether = Ether(dst="ff:ff:ff:ff:ff:ff")
+    packet = ether_packet / arp_packet
 
-    result = srp(packet, timeout=2, verbose=0)[0]
+    result: List[tuple] = srp(packet, timeout=2, verbose=0)[0]
 
-    clients = []
-    for sent, received in result:
+    clients: List[Dict[str, str]] = []
+    for _, received in result:
         clients.append({"ip": received.psrc, "mac": received.hwsrc})
 
     if not clients:
         await update.message.reply_text("No active devices found on the network.")
         return
-
-    response = "Active devices on the network:\n"
+    column_width: List[int] = [15, 15, 30]
+    response: str = "Active devices on the network:\n"
+    response += f"{"Host":<{column_width[0]}}{"IP":<{column_width[1]}}{"MAC":<{column_width[2]}}\n"
     for client in clients:
-        response += f"- IP: {client['ip']}\tMAC: {client['mac']}\n"
+        hostname: str = next(
+            (k for k, v in MAC_TABLE.items() if v == client["mac"]), None
+        )
+        if client["mac"] in MAC_TABLE.values():
+            response += f"{hostname:<{column_width[0]}}{client['ip']:<{column_width[1]}}{client['mac']:<{column_width[2]}}\n"
+        else:
+            response += f"{"N/A":<{column_width[0]}}{client['ip']:<{column_width[1]}}{client['mac']:<{column_width[2]}}\n"
 
-    await update.message.reply_text(response)
+    await update.message.reply_markdown(f"```\n{response}\n```")
 
 
-async def wol(update, context):
+async def wol(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the /wol command to wake up a device.
 
     It expects one argument: the hostname of the device to wake up.
@@ -110,7 +114,7 @@ async def wol(update, context):
         )
         return
 
-    hostname = context.args[0].lower()
+    hostname: str = context.args[0].lower()
 
     if hostname not in MAC_TABLE:
         await update.message.reply_text(
@@ -123,7 +127,9 @@ async def wol(update, context):
     return
 
 
-app = Application.builder().token(TOKEN).post_init(set_bot_commands).build()
+app: Application = (
+    Application.builder().token(TOKEN).post_init(set_bot_commands).build()
+)
 app.add_handler(CommandHandler("help", help_command))
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("wol", wol))

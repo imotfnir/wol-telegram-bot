@@ -1,3 +1,2 @@
-pudb
 python-telegram-bot
 scapy
