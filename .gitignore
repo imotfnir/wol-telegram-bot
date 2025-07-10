@@ -1,3 +1,4 @@
 .env
 *.bak
 .commit_message
+docker-compose.override.yml
