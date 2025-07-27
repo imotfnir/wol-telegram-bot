@@ -33,6 +33,21 @@ def send_wol(hostname: str) -> None:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         s.sendto(magic_packet, (BROADCAST_IP, 9))
 
+def send_sol(hostname: str) -> None:
+    """Constructs and sends a Sleep-on-LAN (SoL) magic packet.
+
+    Args:
+        hostname (str): The identifier for the device to wake up. This key
+            is used to look up the corresponding MAC address in the MAC_TABLE.
+    """
+    mac_address: str = MAC_TABLE[hostname]
+    mac_bytes: bytes = bytes.fromhex(mac_address.replace(":", "").replace("-", ""))[::-1]
+    magic_packet: bytes = b"\xff" * 6 + mac_bytes * 16
+
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        s.sendto(magic_packet, (BROADCAST_IP, 9))
+
 
 # slash commands
 async def set_bot_commands(application: Application) -> None:
@@ -47,6 +62,7 @@ async def set_bot_commands(application: Application) -> None:
         BotCommand("start", "開始使用機器人"),
         BotCommand("help", "顯示幫助"),
         BotCommand("wol", "喚醒裝置"),
+        BotCommand("sol", "哄睡裝置"),
         BotCommand("arp", "列出連線裝置並更新ARP表"),
     ]
     await application.bot.set_my_commands(commands)
@@ -126,6 +142,29 @@ async def wol(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(f"Sending WOL to {MAC_TABLE[hostname]}")
     return
 
+async def sol(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handles the /sol command to sleep a device.
+
+    It expects one argument: the hostname of the device to sleep.
+    It replies with a confirmation or an error message.
+    """
+    if not context.args:
+        await update.message.reply_text(
+            "Please enter the name of the device to be sleep, for example: /sol dell"
+        )
+        return
+
+    hostname: str = context.args[0].lower()
+
+    if hostname not in MAC_TABLE:
+        await update.message.reply_text(
+            f"Device {hostname} not found, please make sure the name is correct!"
+        )
+        return
+
+    send_sol(hostname)
+    await update.message.reply_text(f"Sending SOL to {MAC_TABLE[hostname]}")
+    return
 
 app: Application = (
     Application.builder().token(TOKEN).post_init(set_bot_commands).build()
@@ -134,6 +173,7 @@ app.add_handler(CommandHandler("help", help_command))
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("wol", wol))
 app.add_handler(CommandHandler("arp", arp))
+app.add_handler(CommandHandler("sol", sol))
 
 
 if __name__ == "__main__":
