@@ -13,9 +13,10 @@ if (TOKEN := os.getenv("TELEGRAM_BOT_TOKEN")) is None:
     raise ValueError("Error: TELEGRAM_BOT_TOKEN environment variable not set")
 
 if (mac_table_json := os.getenv("MAC_TABLE")) is not None:
-    MAC_TABLE: Dict[str, str] = json.loads(mac_table_json.lower())
+    DEFAULT_MAC_TABLE: Dict[str, str] = json.loads(mac_table_json.lower())
 else:
-    MAC_TABLE: Dict[str, str] = []
+    DEFAULT_MAC_TABLE: Dict[str, str] = {}
+MAC_TABLE: Dict[str, str] = DEFAULT_MAC_TABLE.copy()
 
 
 def send_wol(hostname: str) -> None:
@@ -64,6 +65,8 @@ async def set_bot_commands(application: Application) -> None:
         BotCommand("wol", "喚醒裝置"),
         BotCommand("sol", "哄睡裝置"),
         BotCommand("arp", "列出連線裝置並更新ARP表"),
+        BotCommand("update_mac_table", "從區網更新MAC地址表"),
+        BotCommand("print_mac_table", "顯示目前的MAC地址表"),
     ]
     await application.bot.set_my_commands(commands)
 
@@ -103,17 +106,17 @@ async def arp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not clients:
         await update.message.reply_text("No active devices found on the network.")
         return
-    column_width: List[int] = [15, 15, 30]
+    column_width: List[int] = [20, 15, 30]
     response: str = "Active devices on the network:\n"
-    response += f"{"Host":<{column_width[0]}}{"IP":<{column_width[1]}}{"MAC":<{column_width[2]}}\n"
+    response += f'{"Host":<{column_width[0]}}{"IP":<{column_width[1]}}{"MAC":<{column_width[2]}}\n'
     for client in clients:
         hostname: str = next(
             (k for k, v in MAC_TABLE.items() if v == client["mac"]), None
         )
         if client["mac"] in MAC_TABLE.values():
-            response += f"{hostname:<{column_width[0]}}{client['ip']:<{column_width[1]}}{client['mac']:<{column_width[2]}}\n"
+            response += f'{hostname:<{column_width[0]}}{client["ip"]:<{column_width[1]}}{client["mac"]:<{column_width[2]}}\n'
         else:
-            response += f"{"N/A":<{column_width[0]}}{client['ip']:<{column_width[1]}}{client['mac']:<{column_width[2]}}\n"
+            response += f'{"N/A":<{column_width[0]}}{client["ip"]:<{column_width[1]}}{client["mac"]:<{column_width[2]}}\n'
 
     await update.message.reply_markdown(f"```\n{response}\n```")
 
@@ -142,6 +145,7 @@ async def wol(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(f"Sending WOL to {MAC_TABLE[hostname]}")
     return
 
+
 async def sol(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the /sol command to sleep a device.
 
@@ -166,6 +170,58 @@ async def sol(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(f"Sending SOL to {MAC_TABLE[hostname]}")
     return
 
+
+async def update_mac_table(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Performs an ARP scan and updates the MAC_TABLE with newly found devices."""
+    await update.message.reply_text("Updating MAC table via ARP scan...")
+
+    target_ip: str = "192.168.0.1/24"  # TODO: Make this configurable
+    arp_packet: ARP = ARP(pdst=target_ip)
+    ether_packet: Ether = Ether(dst="ff:ff:ff:ff:ff:ff")
+    packet = ether_packet / arp_packet
+
+    result: List[tuple] = srp(packet, timeout=2, verbose=0)[0]
+
+    updated_count: int = 0
+    added_count: int = 0
+
+    scanned_devices: Dict[str, str] = {}
+    for _, received in result:
+        ip: str = received.psrc
+        mac: str = received.hwsrc
+        try:
+            hostname: str = socket.gethostbyaddr(ip)[0].lower().split(".")[0]
+            scanned_devices[hostname] = mac
+        except socket.herror:
+            pass  # Cannot resolve hostname
+
+    for hostname, mac in scanned_devices.items():
+        if hostname in MAC_TABLE:
+            if MAC_TABLE[hostname] != mac:
+                MAC_TABLE[hostname] = mac
+                updated_count += 1
+        else:
+            MAC_TABLE[hostname] = mac
+            added_count += 1
+
+    await update.message.reply_text(
+        f"MAC table update complete. Added: {added_count}, Updated: {updated_count}"
+    )
+
+async def print_mac_table(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Prints the current MAC address table."""
+    if not MAC_TABLE:
+        await update.message.reply_text("MAC table is empty.")
+        return
+    
+    column_width: List[int] = [20, 20]
+    response = "Current MAC Table:\n"
+    response += f"{'Hostname':<{column_width[0]}}{'MAC Address':<{column_width[1]}}\n"
+    for hostname, mac in MAC_TABLE.items():
+        response += f"{hostname:<{column_width[0]}}{mac:<{column_width[1]}}\n"
+    print(response)
+    await update.message.reply_markdown(f"```\n{response}\n```")
+
 app: Application = (
     Application.builder().token(TOKEN).post_init(set_bot_commands).build()
 )
@@ -174,6 +230,8 @@ app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("wol", wol))
 app.add_handler(CommandHandler("arp", arp))
 app.add_handler(CommandHandler("sol", sol))
+app.add_handler(CommandHandler("update_mac_table", update_mac_table))
+app.add_handler(CommandHandler("print_mac_table", print_mac_table))
 
 
 if __name__ == "__main__":
