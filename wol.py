@@ -103,27 +103,33 @@ async def arp(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ether_packet: Ether = Ether(dst="ff:ff:ff:ff:ff:ff")
     packet = ether_packet / arp_packet
 
-    result: List[tuple] = srp(packet, timeout=2, verbose=0)[0]
+    result: List[tuple] = srp(packet, timeout=5, verbose=0)[0]
 
-    clients: List[Dict[str, str]] = []
+    scanned_devices: List[Dict[str, str]] = []
     for _, received in result:
-        clients.append({"ip": received.psrc, "mac": received.hwsrc})
+        ip: str = received.psrc
+        mac: str = received.hwsrc
+        try:
+            hostname: str = socket.gethostbyaddr(ip)[0].lower().split(".")[0]
+        except socket.herror:
+            hostname: str = None  # Cannot resolve hostname
+        scanned_devices.append({"hostname": hostname, "ip": ip, "mac": mac})
 
-    if not clients:
+    if not scanned_devices:
         await update.message.reply_text("No active devices found on the network.")
         return
+
     column_width: List[int] = [20, 15, 30]
     response: str = "Active devices on the network:\n"
     response += f"{'Host':<{column_width[0]}}{'IP':<{column_width[1]}}{'MAC':<{column_width[2]}}\n"
-    for client in clients:
-        hostname: str = next(
-            (k for k, v in MAC_TABLE.items() if v == client["mac"]), None
+    for device in scanned_devices:
+        # Prioritize hostname from MAC_TABLE, fallback to DNS-resolved hostname, then 'N/A'
+        mac_table_hostname: str = next(
+            (k for k, v in MAC_TABLE.items() if v == device["mac"]), None
         )
-        if client["mac"] in MAC_TABLE.values():
-            response += f"{hostname:<{column_width[0]}}{client["ip"]:<{column_width[1]}}{client["mac"]:<{column_width[2]}}\n"
-        else:
-            response += f"{'N/A':<{column_width[0]}}{client["ip"]:<{column_width[1]}}{client["mac"]:<{column_width[2]}}\n"
-
+        mac_table_hostname = mac_table_hostname or device["hostname"] or "N/A"
+        response += f"{mac_table_hostname:<{column_width[0]}}{device['ip']:<{column_width[1]}}{device['mac']:<{column_width[2]}}\n"
+    print(response)
     await update.message.reply_markdown(f"```\n{response}\n```")
 
 
@@ -178,7 +184,7 @@ async def update_mac_table(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     ether_packet: Ether = Ether(dst="ff:ff:ff:ff:ff:ff")
     packet = ether_packet / arp_packet
 
-    result: List[tuple] = srp(packet, timeout=2, verbose=0)[0]
+    result: List[tuple] = srp(packet, timeout=5, verbose=0)[0]
 
     updated_count: int = 0
     added_count: int = 0
