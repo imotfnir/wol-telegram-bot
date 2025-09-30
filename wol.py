@@ -40,7 +40,9 @@ def send_wol(hostname: str) -> None:
 def send_sol(hostname: str) -> None:
     """Constructs and sends a Sleep-on-LAN (SoL) magic packet."""
     mac_address: str = MAC_TABLE[hostname]
-    mac_bytes: bytes = bytes.fromhex(mac_address.replace(":", "").replace("-", ""))[::-1]
+    mac_bytes: bytes = bytes.fromhex(mac_address.replace(":", "").replace("-", ""))[
+        ::-1
+    ]
     magic_packet: bytes = b"\xff" * 6 + mac_bytes * 16
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -210,7 +212,7 @@ async def print_mac_table(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not MAC_TABLE:
         await update.message.reply_text("MAC table is empty.")
         return
-    
+
     column_width: List[int] = [20, 20]
     response = "Current MAC Table:\n"
     response += f"{'Hostname':<{column_width[0]}}{'MAC Address':<{column_width[1]}}\n"
@@ -222,42 +224,53 @@ async def print_mac_table(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def edit_mac_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the conversation to edit the MAC table."""
-    await update.message.reply_text("Do you want to [edit] or [add] an entry? You can also /cancel.")
+    await update.message.reply_text(
+        "Do you want to [edit] or [add] an entry? You can also /cancel."
+    )
     return CHOOSING_ACTION
 
 
 async def prompt_edit_or_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handles the user's choice to either edit or add an entry."""
     user_choice = update.message.text.lower()
-    if user_choice == 'edit':
+    if user_choice == "edit":
         if not MAC_TABLE:
-            await update.message.reply_text("MAC table is empty, nothing to edit. You can [add] an entry or /cancel.")
+            await update.message.reply_text(
+                "MAC table is empty, nothing to edit. You can [add] an entry or /cancel."
+            )
             return CHOOSING_ACTION
-        
+
         response = "Current MAC Table:\n"
         response += f"{'Index':<5}{'Hostname':<20}{'MAC Address':<20}\n"
-        context.user_data['mac_table_keys'] = list(MAC_TABLE.keys())
-        for i, hostname in enumerate(context.user_data['mac_table_keys']):
+        context.user_data["mac_table_keys"] = list(MAC_TABLE.keys())
+        for i, hostname in enumerate(context.user_data["mac_table_keys"]):
             response += f"{i:<5}{hostname:<20}{MAC_TABLE[hostname]:<20}\n"
-        
+
         await update.message.reply_markdown(f"```\n{response}\n```")
         await update.message.reply_text("Please enter the index of the entry to edit.")
         return EDIT_CHOICE
-    elif user_choice == 'add':
+    elif user_choice == "add":
         await update.message.reply_text("Please enter the hostname for the new entry.")
         return ADD_HOSTNAME
     else:
-        await update.message.reply_text("Invalid choice. Please choose [edit] or [add]. You can also /cancel.")
+        await update.message.reply_text(
+            "Invalid choice. Please choose [edit] or [add]. You can also /cancel."
+        )
         return CHOOSING_ACTION
 
-async def receive_edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+async def receive_edit_choice(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Receives the index of the entry to edit."""
     try:
         choice = int(update.message.text)
-        keys = context.user_data['mac_table_keys']
+        keys = context.user_data["mac_table_keys"]
         if 0 <= choice < len(keys):
-            context.user_data['edit_key'] = keys[choice]
-            await update.message.reply_text(f"Editing entry for '{keys[choice]}'. Please enter the new hostname.")
+            context.user_data["edit_key"] = keys[choice]
+            await update.message.reply_text(
+                f"Editing entry for '{keys[choice]}'. Please enter the new hostname."
+            )
             return EDIT_HOSTNAME
         else:
             await update.message.reply_text("Invalid index. Please try again.")
@@ -266,17 +279,21 @@ async def receive_edit_choice(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("Invalid input. Please enter a number.")
         return EDIT_CHOICE
 
-async def receive_edit_hostname(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+async def receive_edit_hostname(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Receives the new hostname for the entry being edited."""
-    context.user_data['new_hostname'] = update.message.text.lower()
+    context.user_data["new_hostname"] = update.message.text.lower()
     await update.message.reply_text("Please enter the new MAC address.")
     return EDIT_MAC
+
 
 async def receive_edit_mac(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Receives the new MAC address and finalizes the edit."""
     global MAC_TABLE
-    old_key = context.user_data['edit_key']
-    new_hostname = context.user_data['new_hostname']
+    old_key = context.user_data["edit_key"]
+    new_hostname = context.user_data["new_hostname"]
     new_mac = update.message.text.lower()
 
     # Create a new dictionary to preserve order
@@ -287,26 +304,30 @@ async def receive_edit_mac(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         else:
             new_mac_table[key] = value
     MAC_TABLE = new_mac_table
-    
+
     await update.message.reply_text(f"Entry updated: {new_hostname} - {new_mac}")
     context.user_data.clear()
     return ConversationHandler.END
 
-async def receive_add_hostname(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+async def receive_add_hostname(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> int:
     """Receives the hostname for the new entry."""
-    context.user_data['new_hostname'] = update.message.text.lower()
+    context.user_data["new_hostname"] = update.message.text.lower()
     await update.message.reply_text("Please enter the MAC address for the new entry.")
     return ADD_MAC
 
+
 async def receive_add_mac(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Receives the MAC address and adds the new entry."""
-    global MAC_TABLE
-    hostname = context.user_data['new_hostname']
+    hostname = context.user_data["new_hostname"]
     mac = update.message.text.lower()
     MAC_TABLE[hostname] = mac
     await update.message.reply_text(f"New entry added: {hostname} - {mac}")
     context.user_data.clear()
     return ConversationHandler.END
+
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the conversation."""
@@ -319,14 +340,22 @@ app: Application = (
     Application.builder().token(TOKEN).post_init(set_bot_commands).build()
 )
 
-conv_handler = ConversationHandler(
+edit_mac_table_handler = ConversationHandler(
     entry_points=[CommandHandler("edit_mac_table", edit_mac_start)],
     states={
-        CHOOSING_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, prompt_edit_or_add)],
-        ADD_HOSTNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_hostname)],
+        CHOOSING_ACTION: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, prompt_edit_or_add)
+        ],
+        ADD_HOSTNAME: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_hostname)
+        ],
         ADD_MAC: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_add_mac)],
-        EDIT_CHOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_choice)],
-        EDIT_HOSTNAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_hostname)],
+        EDIT_CHOICE: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_choice)
+        ],
+        EDIT_HOSTNAME: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_hostname)
+        ],
         EDIT_MAC: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_edit_mac)],
     },
     fallbacks=[CommandHandler("cancel", cancel)],
@@ -339,7 +368,7 @@ app.add_handler(CommandHandler("arp", arp))
 app.add_handler(CommandHandler("sol", sol))
 app.add_handler(CommandHandler("update_mac_table", update_mac_table))
 app.add_handler(CommandHandler("print_mac_table", print_mac_table))
-app.add_handler(conv_handler)
+app.add_handler(edit_mac_table_handler)
 
 
 if __name__ == "__main__":
